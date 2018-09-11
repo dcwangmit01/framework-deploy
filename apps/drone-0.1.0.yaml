@@ -1,0 +1,64 @@
+{{- /*
+
+  Copyright © 2018 Cisco Systems, Inc.
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+
+*/ -}}
+
+chart: incubator/drone
+version: {{ default "1.0.4" $app.version }}
+
+{{ toYaml $app }}
+
+{{- if $app.ingress.enabled }}
+{{- $uri := $app.server.host }}
+{{- $fqdn := $uri | replace "https://" "" | replace "http://" "" }}
+ingress:
+  enabled: "true"
+  annotations:
+    kubernetes.io/ingress.class: {{ .ingress.class }}
+  {{- if .ingress.externalDns.enabled }}
+    external-dns.alpha.kubernetes.io/hostname: "{{ $fqdn }}"
+  {{- end }}
+  {{- if .ingress.tls.enabled }}
+    {{- if $app.ingress.tls.disableRedirects }}
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "false"
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    {{ else }}
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    {{- end }}
+  {{- end }}
+  {{- if .ingress.lego.enabled }}
+    {{- if .ingress.lego.defaultAnnotationSuffix }}
+    kubernetes.io/tls-acme{{ .ingress.lego.defaultAnnotationSuffix }}: "true"
+    {{ else }}
+    kubernetes.io/tls-acme: "true"
+    {{- end }}
+  {{- end }}
+  {{- if .ingress.enabled }}
+  hosts:
+    - {{ $fqdn }}
+  {{- end }}
+  {{- if .ingress.tls.enabled }}
+  tls:
+    {{- if .ingress.lego.enabled }}
+    - secretName: {{ $name }}-tls
+    {{ else }}
+    - secretName: {{ default .ingress.tls.secretName $app.ingress.tls.secretName }}
+    {{- end }}
+      hosts:
+        - {{ $fqdn }}
+  {{- end }}
+{{- end }}

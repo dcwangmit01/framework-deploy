@@ -1,0 +1,10 @@
+*.#*
+.terraform
+.ansible
+*.retry
+build
+cluster-dump.yaml
+tmp/
+.awake.log
+rtp10_roles
+clusters/*/bin

@@ -1,0 +1,80 @@
+{{- /*
+
+  Copyright © 2018 Cisco Systems, Inc.
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+
+*/ -}}
+
+chart: {{ default "stable/kibana" $app.chart }}
+version: {{ default "0.2.2" $app.version }}
+
+{{- $appIngress := or $app.ingress nil }}
+{{- $ingress := merge $appIngress .ingress }}
+
+{{- $dnsShortname := $name }}
+{{- $dnsDomain := $ingress.domain }}
+
+image:
+  pullPolicy {{ .imagePullPolicy }}
+
+replicaCount: {{ default .replicaCountEven $app.replicaCount }}
+
+ingress:
+  enabled: {{ $ingress.enabled }}
+  annotations:
+    kubernetes.io/ingress.class: {{ $ingress.class }}
+{{- if $ingress.basicAuth.enabled }}
+    nginx.ingress.kubernetes.io/auth-type: basic
+    nginx.ingress.kubernetes.io/auth-realm: "Authentication Required"
+    nginx.ingress.kubernetes.io/auth-secret: {{ $ingress.basicAuth.secretName }}
+{{- end }}
+{{- if $ingress.externalDns.enabled }}
+    external-dns.alpha.kubernetes.io/hostname: "{{ $dnsShortname }}.{{ $dnsDomain }}"
+{{- end }}
+{{- if $ingress.tls.enabled }}
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+{{- end }}
+{{- if $ingress.lego.enabled }}
+  {{- if $ingress.lego.defaultAnnotationSuffix }}
+    kubernetes.io/tls-acme{{ $ingress.lego.defaultAnnotationSuffix }}: "true"
+  {{ else }}
+    kubernetes.io/tls-acme: "true"
+  {{- end }}
+{{- end }}
+{{- if $ingress.enabled }}
+  hosts:
+    - {{ $dnsShortname }}.{{ $dnsDomain }}
+{{- end }}
+
+{{- if $ingress.tls.enabled }}
+  tls:
+  {{- if $ingress.lego.enabled }}
+    - secretName: {{ $dnsShortname }}-tls
+  {{ else }}
+    - secretName: {{ $ingress.tls.secretName }}
+  {{- end }}
+      hosts:
+        - {{ $dnsShortname }}.{{ $dnsDomain }}
+{{- end }}
+
+
+{{- range tuple "files" "plugins" "image" "config" "env" "service" "resources" "nodeSelector" "tolerations" "affinity" }}
+  {{- $section := . }}
+  {{- $appSection := index $app $section }}
+  {{- with $appSection }}
+{{ $section }}:
+{{ toYaml . | indent 2 }}
+  {{- end }}
+{{- end }}
+

@@ -1,0 +1,113 @@
+{{- /*
+
+  Copyright © 2018 Cisco Systems, Inc.
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+
+*/ -}}
+
+chart: {{ default "incubator/logstash" $app.chart }}
+version: {{ default "0.6.0" $app.version }}
+
+replicaCount: {{ default 2 $app.replicaCount }}
+
+{{ with .ingress }}
+  {{- if and .enabled $app.ingress.enabled }}
+ingress:
+  enabled: true
+  annotations:
+    kubernetes.io/ingress.class: {{ .class }}
+    {{- if .basicAuth.enabled }}
+    nginx.ingress.kubernetes.io/auth-type: basic
+    nginx.ingress.kubernetes.io/auth-realm: "Authentication Required"
+    nginx.ingress.kubernetes.io/auth-secret: {{ .basicAuth.secretName }}
+    {{- end }}
+    {{- if .externalDns.enabled }}
+    external-dns.alpha.kubernetes.io/hostname: {{ printf "%s.%s" $name .domain | quote }}
+    {{- end }}
+    {{- if .tls.enabled }}
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    {{- end }}
+    {{- if .lego.enabled }}
+    kubernetes.io/tls-acme{{ .lego.defaultAnnotationSuffix }}: "true"
+    {{- end }}
+    {{- if .enabled }}
+  hosts:
+    - {{ $name }}.{{ .domain }}
+    {{- end }}
+    {{- if .tls.enabled }}
+  tls:
+      {{- if .lego.enabled }}
+    - secretName: {{ $name }}-tls
+      {{ else }}
+    - secretName: {{ .tls.secretName }}
+      {{- end }}
+      hosts:
+        - {{ $name }}.{{ .domain }}
+    {{- end }}
+  {{- end }}
+{{- end }}
+
+livenessProbe:
+  initialDelaySeconds: 120
+  periodSeconds: 60
+  timeoutSeconds: 60
+  failureThreshold: 12
+  successThreshold: 1
+
+readinessProbe:
+  initialDelaySeconds: 120
+  periodSeconds: 60
+  timeoutSeconds: 60
+  failureThreshold: 12
+  successThreshold: 1
+
+exporter:
+  logstash:
+    enabled: true
+    livenessProbe:
+      periodSeconds: 30
+      timeoutSeconds: 120
+      failureThreshold: 16
+      successThreshold: 1
+    readinessProbe:
+      periodSeconds: 30
+      timeoutSeconds: 120
+      failureThreshold: 16
+      successThreshold: 1
+
+elasticsearch:
+{{- if $app.elasticsearch }}
+  host: {{ default "elasticsearch-elasticsearch-client" $app.elasticsearch.host }}
+  port: {{ default 9200 $app.elasticsearch.port }}
+{{- else }}
+  host: "elasticsearch-elasticsearch-client"
+  port: 9200
+{{- end }}
+
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/path: "/metrics"
+  prometheus.io/port: "9198"
+{{- with $app.podAnnotations }}
+{{ toYaml . | indent 2 }}
+{{- end }}
+
+{{- range tuple "podDisruptionBudget" "updateStrategy" "image" "service" "ports" "resources" "nodeSelector" "tolerations" "affinity" "podLabels" "livenessProbe" "readinessProbe" "persistence" "volumeMounts" "elasticsearch" "config" "patterns" "inputs" "filters" "outputs" }}
+  {{- $section := . }}
+  {{- $appSection := index $app $section }}
+  {{- with $appSection }}
+{{ $section }}:
+{{ toYaml . | indent 2 }}
+  {{- end }}
+{{- end }}
