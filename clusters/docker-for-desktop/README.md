@@ -1,4 +1,4 @@
-# framework-deploy/clusters/docker-for-deskop
+# clusters / docker-for-deskop
 
 ## Service Discovery
 
