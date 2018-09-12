@@ -131,7 +131,7 @@ serviceAccounts:
 rbac:
   create: {{ .rbac.enabled }}
 
-{{- range tuple "alertmanagerFiles" "serverFiles" "networkPolicy" }}
+{{- range tuple "alertmanagerFiles" "serverFiles" "networkPolicy" "serviceAccounts" }}
   {{- $section := . }}
   {{- $appSection := index $app $section }}
   {{- with $appSection }}
