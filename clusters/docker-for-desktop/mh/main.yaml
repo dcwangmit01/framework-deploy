@@ -222,6 +222,7 @@ filebeat:
 
 grafana:
   version: 1.13.1
+  adminUser: admin  # Run 'get-password-grafana.sh' to get the password.
   image:
     tag: 5.2.2
   ingress:
