@@ -18,32 +18,32 @@ mh:
   targetContext: docker-for-desktop
 
 apps:
-  - name: elasticsearch-0.2.0
-    alias: elasticsearch
+  - alias: elasticsearch
+    name: elasticsearch-0.2.0
     key: .elasticsearch
-  - name: elasticsearch-curator-0.2.0
-    alias: elasticsearch-curator
+  - alias: elasticsearch-curator
+    name: elasticsearch-curator-0.2.0
     key: .elasticsearchCurator
-  - name: elasticsearch-exporter-0.1.0
-    alias: elasticsearch-exporter
+  - alias: elasticsearch-exporter
+    name: elasticsearch-exporter-0.1.0
     key: .elasticsearchExporter
-  - name: nginx-ingress-0.2.0
-    alias: nginx-ingress-external
+  - alias: nginx-ingress-external
+    name: nginx-ingress-0.2.0
     key: .nginxIngressExternal
-  - name: kibana-0.2.0
-    alias: kibana
+  - alias: kibana
+    name: kibana-0.2.0
     key: .kibana
-  - name: filebeat-0.2.0
-    alias: filebeat
+  - alias: filebeat
+    name: filebeat-0.2.0
     key: .filebeat
-  - name: prometheus-0.2.0
-    alias: prometheus
+  - alias: prometheus
+    name: prometheus-0.2.0
     key: .prometheus
-  - name: grafana-0.2.0
-    alias: grafana
+  - alias: grafana
+    name: grafana-0.2.0
     key: .grafana
-  - name: chaoskube-0.1.0
-    alias: chaoskube
+  - alias: chaoskube
+    name: chaoskube-0.1.0
     key: .chaoskube
 
 appSources:
@@ -85,6 +85,10 @@ antiAffinity:
 persistentVolumes:
   enabled: true
   size: 1Gi
+
+##
+## Namespace: default
+##
 
 nginxIngressExternal:
   version: 0.23.0
