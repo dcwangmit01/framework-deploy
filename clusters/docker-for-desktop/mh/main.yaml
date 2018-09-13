@@ -21,9 +21,6 @@ apps:
   - alias: elasticsearch
     name: elasticsearch-0.2.0
     key: .elasticsearch
-  - alias: elasticsearch-curator
-    name: elasticsearch-curator-0.2.0
-    key: .elasticsearchCurator
   - alias: elasticsearch-exporter
     name: elasticsearch-exporter-0.1.0
     key: .elasticsearchExporter
@@ -137,35 +134,6 @@ elasticsearch:
     heapSize: "128m"
     persistence:
       size: 1Gi
-
-elasticsearchCurator:
-  config:
-    elasticsearch:
-      hosts:
-        - elasticsearch-client
-      use_ssl: False
-      timeout: 30
-      master_only: False
-  cronjob:
-    schedule: "0 * * * *"
-    concurrencyPolicy: Replace
-  configMaps:
-    action_file_yml: |-
-      actions:
-        0:
-          action: delete_indices
-          description: Clean up old indices but skip the .kibana index
-          options:
-            ignore_empty_list: True
-          filters:
-            - filtertype: kibana
-              exclude: True
-            - filtertype: age
-              source: name
-              direction: older
-              timestring: '%Y.%m.%d'
-              unit: days
-              unit_count: 7
 
 elasticsearchExporter:
   version: 0.2.0
