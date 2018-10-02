@@ -207,11 +207,13 @@ grafana:
       plugins: /var/lib/grafana/plugins
     users:
       auto_assign_org_role: Admin
-    auth.basic:
-      enabled: false
-    auth.proxy:
+    auth.anonymous:
       enabled: true
-      header_name: X-Forwarded-User
+   #auth.basic:
+   #  enabled: false
+   #auth.proxy:
+   #  enabled: false
+   #  header_name: X-Forwarded-User
     log:
       mode: console
   datasources:
