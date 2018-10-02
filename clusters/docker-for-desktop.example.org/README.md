@@ -1,4 +1,4 @@
-# clusters / docker-for-deskop
+# clusters / docker-for-desktop.example.org
 
 ## Service Discovery
 

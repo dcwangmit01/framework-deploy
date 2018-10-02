@@ -15,7 +15,7 @@
 ##
 
 mh:
-  targetContext: docker-for-desktop
+  targetContext: docker-for-desktop.example.org
 
 apps:
   - alias: elasticsearch

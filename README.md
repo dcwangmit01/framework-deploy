@@ -10,7 +10,7 @@ and [mh](https://github.com/cisco-sso/mh).
 1. Try the `framework-deploy` pattern on
 [Docker for Mac with Kubernetes](https://blog.docker.com/2018/01/docker-mac-kubernetes/)
 or [Docker for Windows with Kubernetes](https://learnk8s.io/blog/installing-docker-and-kubernetes-on-windows)
-using the boilerplate at [clusters/docker-for-desktop](clusters/docker-for-desktop).
+using the boilerplate at [clusters/docker-for-desktop.example.org](clusters/docker-for-desktop.example.org).
 
 
 ```
