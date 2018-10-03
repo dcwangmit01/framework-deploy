@@ -3,14 +3,14 @@
 This repo is a boilerplate deployment repo for use with [kdf](https://kdf.csco.cloud/)
 and [mh](https://github.com/cisco-sso/mh).
 
-
 ## Getting Started
 
-1. Review the [kdf documentation site](https://kdf.csco.cloud/).
-1. Try the `framework-deploy` pattern on
-[Docker for Mac with Kubernetes](https://blog.docker.com/2018/01/docker-mac-kubernetes/)
-or [Docker for Windows with Kubernetes](https://learnk8s.io/blog/installing-docker-and-kubernetes-on-windows)
-using the boilerplate at [clusters/docker-for-desktop.example.org](clusters/docker-for-desktop.example.org).
+Follow the KDF Getting Started guide for your operating system. You should complete all the steps of the KDF Getting
+Started guide to ensure `Step 6: Framework Deploy` works properly.
+
+KDF > Getting Started (Step 6: Framework Deploy)
+- [Mac](https://kdf.csco.cloud/getting-started/mac/#step-6-framework-deploy)
+- [Windows](https://kdf.csco.cloud/getting-started/windows/#step-6-framework-deploy)
 
 
 ```
