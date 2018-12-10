@@ -1,0 +1,79 @@
+chart: {{ default "stable/nginx-ingress" $app.chart }}
+version: {{ default "0.28.3" $app.version }}
+## FYI: stable/nginx-ingress 0.28.3 uses the imageTage 1.19.0 what is nginx version 1.15.3.
+## imageTag 1.20.0 ships nginx 1.15.5 what is required via Infosec to have a more secure nginx image.
+
+{{- $root := . }}
+
+controller:
+  image:
+{{- with .ingress.imageTag }}
+    tag: {{ . }}
+{{- end }}
+{{- with .ingress.imageRepository }}
+    repository: {{ . }}
+{{- end }}
+    pullPolicy: {{ default "IfNotPresent" .ingress.imagePullPolicy }}
+
+{{- if .ingress.hostNetwork }}
+  hostNetwork: {{ .ingress.hostNetwork }}
+{{- end }}
+
+{{- if .ingress.publishService }}
+  publishService:
+    enabled: {{ .ingress.publishService.enabled }}
+{{- end }}
+
+{{- if .ingress.verbosityLevel }}
+  extraArgs:
+    v: {{ .ingress.verbosityLevel }}
+{{- end }}
+
+{{- if .ingress.kind }}
+  kind: {{ .ingress.kind }}
+{{- end }}
+
+{{- with .ingress.controller }}
+  {{- with .config }}
+  config:
+{{ toYaml . | indent 4 }}
+  {{- end }}
+  {{- if .replicaCount }}
+  replicaCount: {{ .replicaCount }}
+  {{- else }}
+  replicaCount: {{ $root.replicaCountOdd }}
+  {{- end }}
+  {{- if .resources }}
+  resources:
+{{ toYaml .resources | indent 4 }}
+  {{- end }}
+{{- end }}
+
+{{- if .ingress.service }}
+  service:
+{{ toYaml .ingress.service | indent 4 }}
+{{- end }}
+
+defaultBackend:
+{{- with .ingress.defaultBackend }}
+  {{- if .replicaCount}}
+  replicaCount: {{ .replicaCount }}
+  {{- else }}
+  replicaCount: {{ $root.replicaCountEven }}
+  {{- end }}
+  {{- if .resources }}
+  resources:
+{{ toYaml .resources | indent 4 }}
+  {{- end }}
+{{- end }}
+
+rbac:
+  create: {{ .rbac.enabled }}
+
+serviceAccount:
+  create: {{ .rbac.enabled }}
+  name: {{ .rbac.serviceAccountName }}
+
+{{ with $app }}
+{{ toYaml . }}
+{{ end }}
