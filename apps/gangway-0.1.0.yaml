@@ -1,0 +1,4 @@
+chart: {{ default "cisco-sso/gangway" $app.chart }}
+version: {{ default "0.1.0" $app.version }}
+
+{{ toYaml $app }}

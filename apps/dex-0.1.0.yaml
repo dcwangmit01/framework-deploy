@@ -1,0 +1,11 @@
+chart: {{ default "stable/dex" $app.chart }}
+version: {{ default "0.5.0" $app.version }}
+
+rbac:
+  create: {{ .rbac.enabled }}
+
+serviceAccount:
+  create: {{ .rbac.enabled }}
+  name: {{ $name }}
+
+{{ toYaml $app }}
