@@ -1,0 +1,1964 @@
+
+mh:
+ targetContext: kube1.davidwang.com
+
+apps:
+  - name: raw-0.1.0
+    alias: raw-oauth2-proxy-accesslist-core
+    key: .rawOauth2AccessListCore
+  - name: raw-0.1.0
+    alias: raw-cluster-role-bindings
+    key: .rawClusterRoleBindings
+  - name: raw-0.1.0
+    alias: raw-limit-ranges
+    key: .rawLimitRanges
+  - name: raw-0.1.0
+    alias: raw-priority-classes
+    key: .rawPriorityClasses
+
+  - name: generic-0.1.0
+    alias: cert-manager
+    key: .certManager
+  - name: generic-0.1.0
+    alias: cert-manager-configs
+    key: .certManagerConfigs
+  # - name: chaoskube-0.1.0
+  #   alias: chaoskube
+  #   key: .chaoskube
+  # - name: cluster-autoscaler-0.1.0
+  #   alias: cluster-autoscaler
+  #   key: .clusterAutoscaler
+  - name: elasticsearch-0.2.0
+    alias: elasticsearch
+    key: .elasticsearch
+  - name: elasticsearch-curator-0.2.0
+    alias: elasticsearch-curator
+    key: .elasticsearchCurator
+  - name: elasticsearch-exporter-0.1.0
+    alias: elasticsearch-exporter
+    key: .elasticsearchExporter
+  - name: generic-0.1.0
+    alias: external-dns
+    key: .externalDns
+  - name: filebeat-0.2.0
+    alias: filebeat
+    key: .filebeat
+  - name: grafana-0.2.0
+    alias: grafana
+    key: .grafana
+  - name: kibana-0.2.0
+    key: .kibana
+    alias: kibana
+  # - name: nginx-ingress-0.5.0
+  #   alias: nginx-ingress-external
+  #   key: .nginxIngressExternal
+  - name: oauth2-proxy-1.1.0
+    alias: oauth2-proxy-alertmanager
+    key: .oauth2ProxyAlertmanager
+  - name: oauth2-proxy-1.1.0
+    alias: oauth2-proxy-grafana
+    key: .oauth2ProxyGrafana
+  - name: oauth2-proxy-1.1.0
+    alias: oauth2-proxy-kibana
+    key: .oauth2ProxyKibana
+  - name: oauth2-proxy-1.1.0
+    alias: oauth2-proxy-prometheus
+    key: .oauth2ProxyPrometheus
+  - name: prometheus-0.4.0
+    alias: prometheus
+    key: .prometheus
+
+  - name: dex-0.1.0
+    alias: dex
+    key: .dex
+  - name: generic-0.1.0
+    alias: gangway
+    key: .gangway
+  # - name: hackmd
+  #   alias: hackmd
+  #   key: .hackmd
+
+appSources:
+  - name: apps
+    kind: configPath
+    source: ../../../apps
+
+gomplate:
+  datasources:
+  # Ideally, the datasource file which contains the secrets would be stored in
+  #   keybase location such as:
+  # - "cluster_secrets=file:///keybase/team/example.org/cluster-secrets/kubeadm-one.example.org.yaml"
+  # However, we'll leave it up to the user to create the cluster secrets file
+  #   or set the file path link.  Meanwhile, we'll look in the current
+  #   directory for the cluster-secrets.yaml file which can be created by
+  #   copying cluster-secrets.yaml.example to cluster-secrets.yaml, and then
+  #   modifying the secrets.
+  # - "cluster_secrets=cluster-secrets.yaml"
+    - "cluster_secrets=file:///keybase/team/davidwang_com/cluster-secrets/kube1.davidwang.com.yaml"
+  datasourceheaders: []
+
+
+imagePullPolicy: IfNotPresent
+
+replicaCountEven: 2
+replicaCountOdd: 3
+
+ingress:
+  enabled: false
+  class: nginx
+  domain: kube1.davidwang.com
+  externalDns:
+    enabled: true
+  basicAuth:
+    enabled: true
+    secretName: common-basic-auth
+  tls:
+    enabled: true
+    # `.ingress.tls.secretName` is ignored when `.ingress.lego.enabled` is `true`.
+    secretName: wildcard-production-tls
+  lego:
+    enabled: false
+    defaultAnnotationSuffix: "-staging"
+  oauthProxy:
+    ingress:
+      enabled: true
+      basicAuth:
+        # Keep the quotes for false values otherwise it will throw an error
+        enabled: "false"
+    image:
+    # If you are integrating with Cisco's OIDC provider, then use
+    #   'dcwangmit01/oauth2_proxy:cisco-oidc' which is an oauth2_proxy modified
+    #   to work with Cisco.
+    # repository: dcwangmit01/oauth2_proxy
+    # tag: cisco-oidc.20190103
+    # pullPolicy: IfNotPresent
+      repository: dcwangmit01/oauth2_proxy
+      tag: 2.2.1-alpha-20190103-debug-statements
+      pullPolicy: IfNotPresent
+    service:
+      type: ClusterIP
+      externalPort: 4180
+      internalPort: 4180
+    extraArgs:
+      cookie-expire: "24h"
+      cookie-secure: "true"
+      # email-domain: "domain.com"
+      http-address: "0.0.0.0:4180"
+      oidc-issuer-url: "https://dex.kube1.davidwang.com/"
+      provider: "oidc"
+    authenticatedEmailsFile:
+      enabled: true
+      template: oauth2-proxy-accesslist-core
+
+rbac:
+  enabled: true
+  serviceAccountName: default
+
+antiAffinity:
+  enabled: true
+  type: Hard
+
+persistentVolumes:
+  enabled: true
+  size: 1Gi
+  storageClass: hostpath
+
+certManager:
+  chart: stable/cert-manager
+  version: v0.5.2
+  rbac:
+    create: true
+  ingressShim:
+    enabled: false
+  resources:
+    limits:
+      cpu: 100m
+      memory: 64Mi
+    requests:
+      cpu: 100m
+      memory: 64Mi
+
+certManagerConfigs:
+  chart: cisco-sso/cert-manager-configs
+  version: 0.1.0
+  clusterissuers:
+  - name: letsencrypt-production
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: dcwangmit01@gmail.com
+    challengeproviders:
+      dns01:
+        providers:
+        - name: cloudflare
+          cloudflare:
+            email: '[[ (ds "cluster_secrets").cloudflare.email ]]'
+            apiKeySecretRef:
+              name: external-dns
+              key: cloudflare_api_key
+  certificates:
+  - name: wildcard-production-tls
+    domains:
+    - '*.kube1.davidwang.com'
+    clusterissuer: letsencrypt-production
+    challengeproviders:
+    - dns01:
+        provider: cloudflare
+
+chaoskube:
+  priorityClassName: common-high
+  config:
+    interval: 5m
+    labels: "release!=chaoskube"
+    annotations: ""
+    namespaces: '!kube-system'
+    dryRun: false
+
+clusterAutoscaler:
+  awsRegion: us-east-2
+  priorityClassName: common-high
+  image:
+    tag: v1.3.1
+  autoDiscovery:
+    clusterName: kube1.davidwang.com
+  extraArgs:
+    v: 4
+    logtostderr: true
+    stderrthreshold: info
+    expander: least-waste
+    max-nodes-total: 20
+    housekeeping-interval: 60s
+    scan-interval: 60s
+  rbac:
+    create: true
+  resources:
+    limits:
+      cpu: 100m
+      memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 256Mi
+
+elasticsearch:
+  appVersion: 6.3.1
+  image:
+    tag: 6.3.1
+  cluster:
+    env:
+      NETWORK_HOST: "_eth0:ipv4_"
+  client:
+    replicas: 1
+    priorityClassName: common-critical
+    heapSize: "2048m"
+    antiAffinity: hard
+    resources:
+      limits:
+        cpu: 1
+        memory: 2560Mi
+      requests:
+        cpu: 100m
+        memory: 2560Mi
+  master:
+    replicas: 2
+    priorityClassName: common-critical
+    heapSize: "1024m"
+    antiAffinity: soft
+    persistence:
+      size: 1Gi
+    resources:
+      limits:
+        cpu: 1
+        memory: 1536Mi
+      requests:
+        cpu: 100m
+        memory: 1536Mi
+  data:
+    replicas: 1
+    priorityClassName: common-critical
+    heapSize: "3072m"
+    antiAffinity: hard
+    persistence:
+      size: 16Gi
+    resources:
+      limits:
+        cpu: 1
+        memory: 3840Mi
+      requests:
+        cpu: 100m
+        memory: 3840Mi
+
+elasticsearchCurator:
+  priorityClassName: common-high
+  config:
+    elasticsearch:
+      hosts:
+        - elasticsearch-client
+      use_ssl: False
+      timeout: 30
+      master_only: False
+  cronjob:
+    schedule: "0 * * * *"
+    concurrencyPolicy: Replace
+  configMaps:
+    action_file_yml: |-
+      actions:
+        0:
+          action: delete_indices
+          description: Clean up old indices but skip the .kibana index
+          options:
+            ignore_empty_list: True
+          filters:
+            - filtertype: kibana
+              exclude: True
+            - filtertype: age
+              source: name
+              direction: older
+              timestring: '%Y.%m.%d'
+              unit: days
+              unit_count: 7
+
+elasticsearchExporter:
+  version: 0.2.0
+  priorityClassName: common-critical
+  es:
+    uri: http://elasticsearch-client:9200
+  service:
+    annotations:
+      prometheus.io/scrape: "true"
+      prometheus.io/port: "9108"
+  resources:
+    limits:
+      cpu: 500m
+      memory: 64Mi
+    requests:
+      cpu: 100m
+      memory: 64Mi
+
+externalDns:
+  chart: stable/external-dns
+  version: 1.2.0
+  logLevel: debug
+  priorityClassName: common-medium
+  provider: cloudflare
+#  provider: inmemory
+  cloudflare:
+    apiKey: '[[ (ds "cluster_secrets").cloudflare.apiKey ]]'
+    email: '[[ (ds "cluster_secrets").cloudflare.email ]]'
+  domainFilters:
+    - davidwang.com
+  rbac:
+    create: true
+    serviceAccountName: external-dns
+    apiVersion: v1
+  resources:
+    limits:
+      cpu: 500m
+      memory: 64Mi
+    requests:
+      cpu: 100m
+      memory: 64Mi
+
+filebeat:
+  version: 1.0.5
+  priorityClassName: common-critical
+  serviceAccount:
+    create: true
+    name: filebeat
+  config:
+    filebeat.config:
+      prospectors:
+        path: ${path.config}/prospectors.d/*.yml
+        reload.enabled: false
+      modules:
+        path: ${path.config}/modules.d/*.yml
+        reload.enabled: false
+    processors:
+      - add_cloud_metadata:
+    filebeat.prospectors:
+      - type: log
+        enabled: true
+        paths:
+          - /var/log/*.log
+          - /var/log/messages
+          - /var/log/syslog
+        exclude_files: ['kube\-apiserver\-audit\.log$']
+        ignore_older: 168h
+      - type: log
+        enabled: true
+        paths:
+          - /var/log/kube-apiserver-audit.log
+        ignore_older: 168h
+        json.add_error_key: true
+      - type: docker
+        containers.ids:
+          - "*"
+        ignore_older: 168h
+        processors:
+          - add_kubernetes_metadata:
+              in_cluster: true
+          - drop_event:
+              when:
+                equals:
+                  kubernetes.container.name: "filebeat"
+    output.file:
+      enabled: false
+    output.elasticsearch:
+      hosts:
+        - "http://elasticsearch-client:9200"
+    setup.kibana:
+      host: "kibana:5601"
+  resources:
+    limits:
+      cpu: 100m
+      memory: 200Mi
+    requests:
+      cpu: 100m
+      memory: 200Mi
+  tolerations:
+    - operator: Exists
+
+grafana:
+  version: 1.13.1
+  image:
+    tag: 5.2.2
+  ingress:
+    enabled: "false"
+  persistence:
+    enabled: true
+    size: 1Gi
+    accessModes:
+      - ReadWriteOnce
+  rbac:
+    enable: true
+  resources:
+    limits:
+      cpu: 100m
+      memory: 100Mi
+    requests:
+      cpu: 100m
+      memory: 100Mi
+  grafana.ini:
+    paths:
+      data: /var/lib/grafana/data
+      logs: /var/log/grafana
+      plugins: /var/lib/grafana/plugins
+    users:
+      auto_assign_org_role: Admin
+    auth.basic:
+      enabled: false
+    auth.proxy:
+      enabled: true
+      header_name: X-Forwarded-User
+    log:
+      mode: console
+  datasources:
+    datasources.yaml:
+      apiVersion: 1
+      datasources:
+      - name: Prometheus
+        type: prometheus
+        url: http://prometheus-server
+        access: proxy
+        isDefault: true
+  dashboardProviders:
+    dashboardproviders.yaml:
+      apiVersion: 1
+      providers:
+      - name: 'default'
+        orgId: 1
+        folder: ''
+        type: file
+        disableDeletion: false
+        editable: true
+        options:
+          path: /var/lib/grafana/dashboards/default
+  dashboards:
+    default:
+      prometheus-stats:
+        gnetId: 2
+        revision: 2
+        datasource: Prometheus
+      node-exporter-service-metrics:
+        gnetId: 405
+        revision: 6
+        datasource: Prometheus
+      kubernetes-cluster-monitoring-via-prometheus:
+        gnetId: 1621
+        datasource: Prometheus
+      kubernetes-node-exporter-full:
+        gnetId: 3320
+        datasource: Prometheus
+      kubernetes-deployment:
+        gnetId: 5303
+        datasource: Prometheus
+      kubernetes-capacity:
+        gnetId: 5309
+        datasource: Prometheus
+      kubernetes-cluster-health:
+        gnetId: 5312
+        datasource: Prometheus
+      kubernetes-cluster-status:
+        gnetId: 5315
+        datasource: Prometheus
+      kubernetes-master-status:
+        gnetId: 5318
+        datasource: Prometheus
+      kubernetes-resource-requests:
+        gnetId: 5321
+        datasource: Prometheus
+      kubernetes-nodes:
+        gnetId: 5324
+        datasource: Prometheus
+      kubernetes-pods:
+        gnetId: 5327
+        datasource: Prometheus
+      kubernetes-statefulsets:
+        gnetId: 5330
+        datasource: Prometheus
+      elasticsearch-infinity:
+        gnetId: 6483
+        revision: 1
+        datasource: Prometheus
+
+kibana:
+  priorityClassName: common-critical
+  replicaCount: 1
+  image:
+    repository: "docker.elastic.co/kibana/kibana-oss"
+    tag: "6.3.1"
+  ingress:
+    enabled: "false"
+  service:
+    type: ClusterIP
+    externalPort: 5601
+    internalPort: 5601
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 50
+          podAffinityTerm:
+            topologyKey: failure-domain.beta.kubernetes.io/zone
+            labelSelector:
+              matchLabels:
+                release: kibana
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - weight: 40
+          topologyKey: "kubernetes.io/hostname"
+          labelSelector:
+            matchLabels:
+              release: kibana
+  resources:
+    limits:
+      cpu: 1
+      memory: 256Mi
+    requests:
+      cpu: 200m
+      memory: 256Mi
+  env:
+    ELASTICSEARCH_URL: http://elasticsearch-client:9200
+    SERVER_PORT: 5601
+    LOGGING_VERBOSE: "false"
+    SERVER_DEFAULTROUTE: "/app/kibana"
+
+nginxIngressExternal:
+  version: 0.31.0
+  serviceAccount:
+    create: true
+    name: nginx-ingress-external
+  controller:
+    priorityClassName: common-high
+    electionID: external
+    ingressClass: nginx
+    replicaCount: 2
+    publishService:
+      enabled: true
+    config:
+      hsts: "true"
+      hsts-include-subdomains: "true"
+      ## ref: https://docs.nginx.com/nginx/admin-guide/security-controls/controlling-access-by-geoip
+      http-snippet: |-
+        map $geoip_country_code $allowed_country {
+            default yes;
+            CU no;
+            IR no;
+            KP no;
+            SD no;
+            SY no;
+            UA no;
+        }
+        add_header X-Content-Type-Options nosniff;
+        add_header X-Frame-Options sameorigin;
+        add_header X-XSS-Protection 1;
+      ## ref: https://httpstatuses.com/444
+      server-snippet: |-
+        if ($allowed_country = no) {
+            return 444;
+        }
+      server-tokens: "False"
+    extraArgs:
+      v: 2
+    service:
+      annotations:
+        # Ensure the ELB idle timeout is less than nginx keep-alive timeout. By default,
+        # NGINX keep-alive is set to 75s. If using WebSockets, the value will need to be
+        # increased to '3600' to avoid any potential issues.
+        service.beta.kubernetes.io/aws-load-balancer-connection-idle-timeout: "3600"
+    resources:
+      limits:
+        cpu: 1
+        memory: 256Mi
+      requests:
+        cpu: 100m
+        memory: 256Mi
+  defaultBackend:
+    priorityClassName: common-high
+    resources:
+      limits:
+        cpu: 100m
+        memory: 16Mi
+      requests:
+        cpu: 100m
+        memory: 16Mi
+
+oauth2ProxyAlertmanager:
+  replicaCount: 1
+  priorityClassName: common-high
+  clientID: alertmanager.kube1.davidwang.com
+  clientSecret: '[[ (ds "cluster_secrets").dex.clients.alertmanager.secret ]]'
+  cookieSecret: '[[ (ds "cluster_secrets").dex.clients.alertmanager.session ]]'
+  dnsShortname: alertmanager
+  upstream: "http://prometheus-alertmanager"
+  configFile: ""
+  ingress:
+    enabled: true
+    annotations:
+      external-dns.alpha.kubernetes.io/target: dyndns.davidwang.com
+
+oauth2ProxyGrafana:
+  replicaCount: 1
+  priorityClassName: common-high
+  clientID: grafana.kube1.davidwang.com
+  clientSecret: '[[ (ds "cluster_secrets").dex.clients.grafana.secret ]]'
+  cookieSecret: '[[ (ds "cluster_secrets").dex.clients.grafana.session ]]'
+  dnsShortname: grafana
+  upstream: "http://grafana"
+  configFile: ""
+  ingress:
+    enabled: true
+    annotations:
+      external-dns.alpha.kubernetes.io/target: dyndns.davidwang.com
+
+oauth2ProxyKibana:
+  replicaCount: 1
+  priorityClassName: common-high
+  clientID: "kibana.kube1.davidwang.com"
+  clientSecret: '[[ (ds "cluster_secrets").dex.clients.kibana.secret ]]'
+  cookieSecret: '[[ (ds "cluster_secrets").dex.clients.kibana.session ]]'
+  dnsShortname: kibana
+  upstream: "http://kibana:5601"
+  configFile: ""
+  ingress:
+    enabled: true
+    annotations:
+      external-dns.alpha.kubernetes.io/target: dyndns.davidwang.com
+
+oauth2ProxyPrometheus:
+  replicaCount: 1
+  priorityClassName: common-high
+  clientID: prometheus.kube1.davidwang.com
+  clientSecret: '[[ (ds "cluster_secrets").dex.clients.prometheus.secret ]]'
+  cookieSecret: '[[ (ds "cluster_secrets").dex.clients.prometheus.session ]]'
+  dnsShortname: prometheus
+  upstream: "http://prometheus-server"
+  configFile: ""
+  ingress:
+    enabled: true
+    annotations:
+      external-dns.alpha.kubernetes.io/target: dyndns.davidwang.com
+
+prometheus:
+  chart: stable/prometheus
+  version: 7.4.5
+  rbac:
+    # Set to true means it takes the default serviceAccountNames from the helm chart.
+    # Each service has it's own service account in that case
+    serviceAccountName: true
+  persistentVolumes:
+    size: 8Gi
+  kubeStateMetrics:
+    replicaCount: 1
+    priorityClassName: common-critical
+    resources:
+      limits:
+        cpu: 1
+        memory: 256Mi
+      requests:
+        cpu: 100m
+        memory: 256Mi
+  nodeExporter:
+    priorityClassName: common-critical
+    resources:
+      limits:
+        cpu: 1
+        memory: 64Mi
+      requests:
+        cpu: 100m
+        memory: 64Mi
+  pushgateway:
+    priorityClassName: common-critical
+    replicaCount: 1
+    resources:
+      limits:
+        cpu: 1
+        memory: 128Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+  alertmanager:
+    priorityClassName: common-critical
+    baseURL: 'https://alertmanager.kube1.davidwang.com/'
+    resources:
+      limits:
+        cpu: 1
+        memory: 128Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+  alertmanagerFiles:
+    alertmanager.yml:
+      global:
+        # smtp_from: 'admin+alert-kube1@davidwang.com'
+        # smtp_smarthost: '<REPLACE>'
+        # smtp_hello: 'kube1.davidwang.com'
+        # smtp_auth_username: '<REPLACE>'
+        # smtp_auth_password: '<REPLACE>'
+      receivers:
+      - name: 'email-team-core'
+        # email_configs:
+        # - send_resolved: true
+        #   to: 'arch-sre+alert-core@davidwang.com'
+      - name: 'email-team-dev'
+        # email_configs:
+        # - send_resolved: true
+        #   to: 'arch-sre+alert-dev@davidwang.com'
+      route:
+        # Documentation: https://prometheus.io/docs/alerting/configuration/#%3Croute%3E
+        receiver: 'email-team-dev'
+        group_wait: 5m
+        group_interval: 5m
+        group_by: [alertname]
+        repeat_interval: 8h
+        continue: false
+        # Child routes are matched sequentially.  Any child route match stops
+        #   processing immediately and triggers alert because continue==false
+        routes:
+        # Send all K8S level alerts to core team
+        - match_re:
+            alertname: '^(K8S.+|Kube.+Overcommit|KubeQuota.+|KubePersist.+|KubeNode.+|KubeVersion.+|KubeClient.+|Elasticsearch.+|Node.+Usage)$'
+          receiver: 'email-team-core'
+        # THE NEXT SET OF REGEXES ARE THE SAME
+        #   They match labels from kube-state-metrics, which do not pass through the kube resource labels
+        ### Route the following to the dev team
+        - match_re:
+            cronjob:               &custom_prom_matches '.*(davidwang).*'
+          receiver: 'email-team-dev'
+        - match_re:
+            daemonset:             *custom_prom_matches
+          receiver: 'email-team-dev'
+        - match_re:
+            deployment:            *custom_prom_matches
+          receiver: 'email-team-dev'
+        - match_re:
+            endpoint:              *custom_prom_matches
+          receiver: 'email-team-dev'
+        - match_re:
+            job:                   *custom_prom_matches
+          receiver: 'email-team-dev'
+        - match_re:
+            persistentvolume:      *custom_prom_matches
+          receiver: 'email-team-dev'
+        - match_re:
+            persistentvolumeclaim: *custom_prom_matches
+          receiver: 'email-team-dev'
+        - match_re:
+            pod:                   *custom_prom_matches
+          receiver: 'email-team-dev'
+        - match_re:
+            service:               *custom_prom_matches
+          receiver: 'email-team-dev'
+        - match_re:
+            statefulset:           *custom_prom_matches
+          receiver: 'email-team-dev'
+        ### Route the following to the core team
+        - match_re:
+            cronjob:               &default_prom_matches '.*(cert-manager|chaoskube|cluster-autoscaler|consul|dashboard|docker-registry|elasticsearch|external-dns|filebeat|fluentd-elasticsearch|grafana|kafka|kibana|logstash|minio|nginx-ingress|oauth2-proxy|prometheus|stolon|vault|zookeeper).*'
+          receiver: 'email-team-core'
+        - match_re:
+            daemonset:             *default_prom_matches
+          receiver: 'email-team-core'
+        - match_re:
+            deployment:            *default_prom_matches
+          receiver: 'email-team-core'
+        - match_re:
+            endpoint:              *default_prom_matches
+          receiver: 'email-team-core'
+        - match_re:
+            job:                   *default_prom_matches
+          receiver: 'email-team-core'
+        - match_re:
+            persistentvolume:      *default_prom_matches
+          receiver: 'email-team-core'
+        - match_re:
+            persistentvolumeclaim: *default_prom_matches
+          receiver: 'email-team-core'
+        - match_re:
+            pod:                   *default_prom_matches
+          receiver: 'email-team-core'
+        - match_re:
+            service:               *default_prom_matches
+          receiver: 'email-team-core'
+        - match_re:
+            statefulset:           *default_prom_matches
+          receiver: 'email-team-core'
+        # If an alert has not matched here, it goes to the parent default route/receiver
+  server:
+    global:
+      scrape_interval: 15s
+      scrape_timeout: 10s
+      evaluation_interval: 30s
+    priorityClassName: common-critical
+    baseURL: 'https://prometheus.kube1.davidwang.com/'
+    resources:
+      limits:
+        cpu: 1
+        memory: 2048Mi
+      requests:
+        cpu: 100m
+        memory: 2048Mi
+  serverFiles:
+    alerts:
+      groups:
+# START > from https://grafana.com/dashboards/2322 (heavily refactored)
+        - name: elasticsearch-exporter
+          rules:
+            - alert: ElasticsearchClusterHealthUp
+              annotations:
+                description: "ElasticSearch node: {{ $labels.instance }} last scrape of the ElasticSearch cluster health failed"
+                summary: "ElasticSearch node: {{ $labels.instance }} last scrape of the ElasticSearch cluster health failed"
+              expr: elasticsearch_cluster_health_up{} != 1
+              for: 2m
+              labels:
+                severity: critical
+            - alert: ElasticsearchClusterHealthRed
+              annotations:
+                description: "Instance {{ $labels.instance }}: not all primary and replica shards are allocated in elasticsearch cluster {{ $labels.cluster }}."
+                summary: "Instance {{ $labels.instance }}: not all primary and replica shards are allocated in elasticsearch cluster {{ $labels.cluster }}"
+              expr: elasticsearch_cluster_health_status{color="red"}==1
+              for: 5m
+              labels:
+                severity: critical
+            - alert: ElasticsearchClusterHealthYellow
+              annotations:
+                description: "Instance {{ $labels.instance }}: not all primary and replica shards are allocated in elasticsearch cluster {{ $labels.cluster }}."
+                summary: "Instance {{ $labels.instance }}: not all primary and replica shards are allocated in elasticsearch cluster {{ $labels.cluster }}"
+              expr: elasticsearch_cluster_health_status{color="yellow"}==1
+              for: 10m
+              labels:
+                severity: critical
+            - alert: ElasticsearchInstanceJvmHeapTooHigh
+              annotations:
+                description: "The heap in {{ $labels.instance }} is over 80% for 15m."
+                summary: "ElasticSearch node {{ $labels.instance }} heap usage is high"
+              expr: elasticsearch_jvm_memory_used_bytes{area="heap"} / elasticsearch_jvm_memory_max_bytes{area="heap"} > 0.8
+              for: 15m
+              labels:
+                severity: critical
+            - alert: ElasticsearchClusterTooFewNodesRunning
+              # TODO: This alert counts all nodes, including data, master, client
+              annotations:
+                description: "There are only {{$value}} < 3 ElasticSearch nodes running"
+                summary: "ElasticSearch running on less than 3 data/master/client nodes"
+              expr: elasticsearch_cluster_health_number_of_nodes < 3
+              for: 5m
+              labels:
+                severity: critical
+            - alert: ElasticsearchClusterTooFewDataNodesRunning
+              annotations:
+                description: "There are only {{$value}} < 3 ElasticSearch data nodes running"
+                summary: "ElasticSearch running on less than 3 data nodes"
+              expr: elasticsearch_cluster_health_number_of_data_nodes < 3
+              for: 5m
+              labels:
+                severity: critical
+            - alert: ElasticsearchInstanceHighCountOfJvmGcRuns
+              annotations:
+                description: "ElasticSearch node {{ $labels.instance }}: Count of JVM GC runs > 5 per sec and has a value of {{ $value }}"
+                summary: "ElasticSearch node {{ $labels.instance }}: Count of JVM GC runs > 5 per sec and has a value of {{ $value }}"
+              expr: rate(elasticsearch_jvm_gc_collection_seconds_count{}[5m])>5
+              for: 1m
+              labels:
+                severity: warning
+            - alert: ElasticsearchInstanceSlowGcRunTime
+              annotations:
+                description: "ElasticSearch node {{ $labels.instance }}: GC run time in seconds > 0.3 sec and has a value of {{ $value }}"
+                summary: "ElasticSearch node {{ $labels.instance }}: GC run time in seconds > 0.3 sec and has a value of {{ $value }}"
+              expr: rate(elasticsearch_jvm_gc_collection_seconds_sum[5m])>0.3
+              for: 1m
+              labels:
+                severity: warning
+            - alert: ElasticsearchInstanceJsonParseFailures
+              annotations:
+                description: "ElasticSearch node {{ $labels.instance }}: json parse failures > 25 and has a value of {{ $value }}"
+                summary: "ElasticSearch node {{ $labels.instance }}: json parse failures > 25 and has a value of {{ $value }}"
+              expr: elasticsearch_cluster_health_json_parse_failures>25
+              for: 1m
+              labels:
+                severity: warning
+            - alert: ElasticsearchInstanceBreakersTripped
+              annotations:
+                description: "ElasticSearch node {{ $labels.instance }}: breakers tripped > 0 and has a value of {{ $value }}"
+                summary: "ElasticSearch node {{ $labels.instance }}: breakers tripped > 0 and has a value of {{ $value }}"
+              expr: rate(elasticsearch_breakers_tripped{}[5m])>0
+              for: 1m
+              labels:
+                severity: warning
+            - alert: ElasticsearchInstanceHealthCheckTimeout
+              annotations:
+                description: "ElasticSearch node {{ $labels.instance }}: Number of cluster health checks timed out > 0 and has a value of {{ $value }}"
+                summary: "ElasticSearch node {{ $labels.instance }}: Number of cluster health checks timed out > 0 and has a value of {{ $value }}"
+              expr: elasticsearch_cluster_health_timed_out>0
+              for: 1m
+              labels:
+                severity: warning
+# END < from https://grafana.com/dashboards/2322
+# START > from https://github.com/coreos/prometheus-operator/blob/master/contrib/kube-prometheus/assets/prometheus/rules/kubelet.rules.yaml
+        - name: kubelet.rules
+          rules:
+            - alert: K8SNodeNotReady
+              expr: kube_node_status_condition{condition="Ready",status="true"} == 0
+              for: 1h
+              labels:
+                severity: warning
+              annotations:
+                description: The Kubelet on {{ $labels.node }} has not checked in with the API,
+                  or has set itself to NotReady, for more than an hour
+                summary: Node status is NotReady
+            - alert: K8SManyNodesNotReady
+              expr: count(kube_node_status_condition{condition="Ready",status="true"} == 0)
+                > 1 and (count(kube_node_status_condition{condition="Ready",status="true"} ==
+                0) / count(kube_node_status_condition{condition="Ready",status="true"})) > 0.2
+              for: 10m
+              labels:
+                severity: critical
+              annotations:
+                description: '{{ $value }}% of Kubernetes nodes are not ready'
+            - alert: K8SKubeletDown
+              expr: count(up{job="kubelet"} == 0) / count(up{job="kubelet"}) * 100 > 3
+              for: 1h
+              labels:
+                severity: warning
+              annotations:
+                description: Prometheus failed to scrape {{ $value }}% of kubelets.
+            - alert: K8SKubeletTooManyPods
+              expr: kubelet_running_pod_count > 1000
+              for: 10m
+              labels:
+                severity: warning
+              annotations:
+                description: Kubelet {{$labels.instance}} is running {{$value}} pods, close
+                  to the limit of 1100
+                summary: Kubelet is close to pod limit
+# END < from https://github.com/coreos/prometheus-operator/blob/master/contrib/kube-prometheus/assets/prometheus/rules/kubelet.rules.yaml
+# START > generated from https://github.com/kubernetes-monitoring/kubernetes-mixin
+        - name: kubernetes-apps
+          rules:
+            - alert: KubePodCrashLooping
+              annotations:
+                description: "{{ $labels.namespace }}/{{ $labels.pod }} ({{ $labels.container }}) is restarting {{ printf \"%.2f\" $value }} / minute"
+                summary: K8s pods are restarting more than once every 10 minutes
+              expr: rate(kube_pod_container_status_restarts_total[15m]) * 60 > 0.1
+              for: 1h
+              labels:
+                severity: critical
+            - alert: KubePodNotReady
+              annotations:
+                description: "{{ $labels.namespace }}/{{ $labels.pod }} is not ready."
+                summary: Some K8s pods are not ready
+              expr: sum by (namespace, pod) (kube_pod_status_phase{phase!~"Running|Succeeded"}) > 0
+              for: 1h
+              labels:
+                severity: critical
+            - alert: KubeDeploymentGenerationMismatch
+              annotations:
+                description: "Deployment {{ $labels.namespace }}/{{ $labels.deployment }} generation mismatch"
+                summary: K8s deployment generation mismatch
+              expr: kube_deployment_status_observed_generation != kube_deployment_metadata_generation
+              for: 15m
+              labels:
+                severity: critical
+            - alert: KubeDeploymentReplicasMismatch
+              annotations:
+                description: "Deployment {{ $labels.namespace }}/{{ $labels.deployment }} replica mismatch"
+                summary: K8s deployment replica mismatch
+              expr: kube_deployment_spec_replicas != floor(avg_over_time(kube_deployment_status_replicas_available[5m]))
+              for: 15m
+              labels:
+                severity: critical
+            - alert: KubeStatefulSetGenerationMismatch
+              annotations:
+                description: "StatefulSet {{ $labels.namespace }}/{{ $labels.statefulset }} generation mismatch"
+                summary: K8s statefulset generation mismatch
+              expr: kube_statefulset_status_observed_generation != kube_statefulset_metadata_generation
+              for: 15m
+              labels:
+                severity: critical
+            - alert: KubeStatefulSetReplicasMismatch
+              annotations:
+                description: "StatefulSet {{ $labels.namespace }}/{{ $labels.statefulset }} replica mismatch"
+                summary: K8s statefulset replica mismatch
+              expr: kube_statefulset_replicas != floor(avg_over_time(kube_statefulset_status_replicas_ready[5m]))
+              for: 15m
+              labels:
+                severity: critical
+        - name: kubernetes-resources
+          rules:
+            - alert: KubeCPUOvercommit
+              annotations:
+                description: "Overcommited CPU resource requests on Pods, cannot tolerate node failure."
+                summary: K8s overcommited CPU requests on pods
+              expr: |
+                sum(namespace_name:kube_pod_container_resource_requests_cpu_cores:sum) / sum(node:node_num_cpu:sum)
+                  > (count(node:node_num_cpu:sum)-1) / count(node:node_num_cpu:sum)
+              for: 5m
+              labels:
+                severity: warning
+            - alert: KubeMemOvercommit
+              annotations:
+                description: "Overcommited Memory resource requests on Pods, cannot tolerate node failure."
+                summary: K8s overcommited memory requests on pods
+              expr: sum(namespace_name:kube_pod_container_resource_requests_memory_bytes:sum) / sum(node_memory_MemTotal) > (count(node:node_num_cpu:sum)-1) / count(node:node_num_cpu:sum)
+              for: 5m
+              labels:
+                severity: warning
+            - alert: KubeCPUOvercommit
+              annotations:
+                description: "Overcommited CPU resource request quota on Namespaces."
+                summary:
+              expr: sum(kube_resourcequota{type="hard", resource="requests.cpu"}) / sum(node:node_num_cpu:sum) > 1.5
+              for: 5m
+              labels:
+                severity: warning
+            - alert: KubeMemOvercommit
+              annotations:
+                description: "Overcommited Memory resource request quota on Namespaces."
+                summary: K8s overcommited memory resource request on namespace
+              expr: sum(kube_resourcequota{type="hard", resource="requests.memory"}) / sum(node_memory_MemTotal) > 1.5
+              for: 5m
+              labels:
+                severity: warning
+            - alert: KubeQuotaExceeded
+              annotations:
+                description: "{{ printf \"%0.0f\" $value }}% usage of {{ $labels.resource }} in namespace {{ $labels.namespace }}."
+                summary: K8s resource quota execeeded
+              expr: 100 * kube_resourcequota{type="used"} / ignoring(instance, job, type) kube_resourcequota{type="hard"} > 90
+              for: 15m
+              labels:
+                severity: warning
+        - name: kubernetes-storage
+          rules:
+            - alert: KubePersistentVolumeUsageCritical
+              annotations:
+                description: "The persistent volume claimed by {{ $labels.persistentvolumeclaim }} in namespace {{ $labels.namespace }} has {{ printf \"%0.0f\" $value }}% free."
+                summary: K8s PVC usage critical
+              expr: 100 * kubelet_volume_stats_available_bytes / kubelet_volume_stats_capacity_bytes < 25
+              for: 1m
+              labels:
+                severity: critical
+            # TODO: this alert keeps unnecessarily triggering.  Will rely on the alert above
+            # - alert: KubePersistentVolumeFullInFourDays
+            #   annotations:
+            #     description: "Based on recent sampling, the persistent volume claimed by {{ $labels.persistentvolumeclaim }} in namespace {{ $labels.namespace }} is expected to fill up within four days."
+            #     summary: K8s PVC nearing capacity
+            #   expr: predict_linear(kubelet_volume_stats_available_bytes[4h], 4 * 24 * 3600) < 0
+            #   for: 2h
+            #   labels:
+            #     severity: critical
+        - name: kubernetes-system
+          rules:
+            - alert: KubeNodeNotReady
+              annotations:
+                description: "{{ $labels.node }} has been unready for more than an hour"
+                summary: K8s node unready
+              expr: max(kube_node_status_ready{condition="false"} == 1) BY (node)
+              for: 1h
+              labels:
+                severity: warning
+            - alert: KubeVersionMismatch
+              annotations:
+                description: "There are {{ $value }} different versions of Kubernetes components running."
+                summary: K8s version mismatch
+              expr: count(count(kubernetes_build_info{job!="kube-system/kube-dns",k8s_app!="kube-dns"}) by (gitVersion)) > 1
+              for: 1h
+              labels:
+                severity: warning
+            - alert: KubeClientErrors
+              annotations:
+                description: "Kubernetes API server client '{{ $labels.job }}/{{ $labels.instance }}' is experiencing {{ printf \"%0.0f\" $value }}% errors.'"
+                summary: K8s API server client errors
+              expr: |
+                sum(rate(rest_client_requests_total{code!~"2.."}[5m])) by (instance, job) * 100 /
+                 sum(rate(rest_client_requests_total[5m])) by (instance, job) > 5
+              for: 15m
+              labels:
+                severity: warning
+            - alert: KubeClientErrors
+              annotations:
+                description: "Kubernetes API server client '{{ $labels.job }}/{{ $labels.instance }}' is experiencing {{ printf \"%0.0f\" $value }} errors / sec.'"
+                summary: K8s API server client errors
+              expr: sum(rate(container_scrape_error[5m])) by (instance, job) > 0.1
+              for: 15m
+              labels:
+                severity: warning
+# START > from https://www.robustperception.io/alerting-on-crash-loops-with-prometheus/
+        - name: crashloop.rules
+          rules:
+            - alert: JobRestarting
+              annotations:
+                message: "{{ $value }}% of instances in job restarted more than 3 times in past hour."
+                summary: Instances in job restarted more than 3 times in past hour.
+              expr: avg without(instance)(changes(process_start_time_seconds[1h])) > 3
+              for: 10m
+              labels:
+                severity: warning
+            - alert: JobRestarting
+              annotations:
+                message: "{{ $value }}% of instances in job restarted more than 3 times in past hour."
+                summary: More than 10% of instances in job restarted more than 3 times in past hour.
+              expr: avg without(instance)(changes(process_start_time_seconds[1h]) > bool 3) > 0.1
+              for: 10m
+              labels:
+                severity: warning
+# END < from https://www.robustperception.io/alerting-on-crash-loops-with-prometheus/
+# START -> from https://github.com/camilb/prometheus-kubernetes/blob/master/manifests/prometheus/prometheus-k8s-rules.yaml
+        - name: general.rules
+          rules:
+            - alert: ScrapeTargetDown
+              expr: floor(avg_over_time(up[5m])) == 0
+              for: 15m
+              labels:
+                severity: warning
+              annotations:
+                description: 'ScrapeTargetDown for job={{ $labels.job }} resource_name={{ $labels.kubernetes_name }}'
+                summary: Prometheus unable to scrape metrics target(s)
+            - alert: TooManyOpenFileDescriptors
+              expr: 100 * (process_open_fds / process_max_fds) > 85
+              for: 10m
+              labels:
+                severity: critical
+              annotations:
+                description: '{{ $labels.job }}: {{ $labels.namespace }}/{{ $labels.pod }} ({{
+                  $labels.instance }}) is using {{ $value }}% of the available file/socket descriptors.'
+                summary: too many open file descriptors
+            - record: instance:fd_utilization
+              expr: process_open_fds / process_max_fds
+            - alert: FdExhaustionClose
+              expr: predict_linear(instance:fd_utilization[1h], 3600 * 4) > 1
+              for: 10m
+              labels:
+                severity: warning
+              annotations:
+                description: '{{ $labels.job }}: {{ $labels.namespace }}/{{ $labels.pod }} ({{
+                  $labels.instance }}) instance will exhaust in file/socket descriptors soon'
+                summary: file descriptors soon exhausted
+            - alert: FdExhaustionClose
+              expr: predict_linear(instance:fd_utilization[10m], 3600) > 1
+              for: 10m
+              labels:
+                severity: critical
+              annotations:
+                description: '{{ $labels.job }}: {{ $labels.namespace }}/{{ $labels.pod }} ({{
+                  $labels.instance }}) instance will exhaust in file/socket descriptors soon'
+                summary: file descriptors soon exhausted
+        - name: job.rules
+          rules:
+            - alert: CronJobRunning
+              expr: time() - kube_cronjob_next_schedule_time > 3600
+              for: 1h
+              labels:
+                severity: warning
+              annotations:
+                description: CronJob {{$labels.namespaces}}/{{$labels.cronjob}} is taking more than 1h to complete
+                summary: CronJob didn't finish after 1h
+        - name: kube-apiserver.rules
+          rules:
+            - alert: K8SApiserverDown
+              expr: absent(up{job="kubernetes-apiservers"} == 1)
+              for: 5m
+              labels:
+                severity: critical
+              annotations:
+                description: Prometheus failed to scrape API server(s), or all API servers have
+                  disappeared from service discovery.
+                summary: API server unreachable
+            - alert: K8SApiServerLatency
+              expr: histogram_quantile(0.99, sum(rate(apiserver_request_latencies_bucket{subresource!="log",verb!~"^(?:CONNECT|WATCHLIST|WATCH|PROXY)$"}[10m]))
+                by (le)) / 1e+06 > 1
+              for: 10m
+              labels:
+                severity: warning
+              annotations:
+                description: 99th percentile Latency for {{ $labels.verb }} requests to the
+                  kube-apiserver is higher than 1s.
+                summary: Kubernetes apiserver latency is high
+        - name: kube-state-metrics.rules
+          rules:
+            - alert: DeploymentGenerationMismatch
+              expr: kube_deployment_status_observed_generation != kube_deployment_metadata_generation
+              for: 15m
+              labels:
+                severity: warning
+              annotations:
+                description: Observed deployment generation does not match expected one for
+                  deployment {{$labels.namespaces}}/{{$labels.deployment}}
+                summary: Deployment is outdated
+            - alert: DeploymentReplicasNotUpdated
+              expr: (kube_deployment_status_replicas_updated != kube_deployment_spec_replicas)
+                unless (kube_deployment_spec_paused == 1)
+              for: 15m
+              labels:
+                severity: warning
+              annotations:
+                description: Replicas are not updated and available for deployment {{$labels.namespaces}}/{{$labels.deployment}}
+                summary: Deployment replicas are outdated
+            - alert: DaemonSetRolloutStuck
+              expr: kube_daemonset_status_number_ready / kube_daemonset_status_desired_number_scheduled
+                * 100 < 100
+              for: 15m
+              labels:
+                severity: warning
+              annotations:
+                description: Only {{$value}}% of desired pods scheduled and ready for daemon
+                  set {{$labels.namespaces}}/{{$labels.daemonset}}
+                summary: DaemonSet is missing pods
+            - alert: K8SDaemonSetsNotScheduled
+              expr: kube_daemonset_status_desired_number_scheduled - kube_daemonset_status_current_number_scheduled
+                > 0
+              for: 10m
+              labels:
+                severity: warning
+              annotations:
+                description: A number of daemonsets are not scheduled.
+                summary: Daemonsets are not scheduled correctly
+            - alert: DaemonSetsMissScheduled
+              expr: kube_daemonset_status_number_misscheduled > 0
+              for: 10m
+              labels:
+                severity: warning
+              annotations:
+                description: A number of daemonsets are running where they are not supposed
+                  to run.
+                summary: Daemonsets are not scheduled correctly
+        - name: node.rules
+          rules:
+            - alert: NodeExporterDown
+              expr: absent(up{job="kubernetes-nodes"} == 1)
+              for: 10m
+              labels:
+                severity: warning
+              annotations:
+                description: Prometheus could not scrape a node-exporter for more than 10m,
+                  or node-exporters have disappeared from discovery.
+                summary: node-exporter cannot be scraped
+            - alert: K8SNodeOutOfDisk
+              expr: kube_node_status_condition{condition="OutOfDisk",status="true"} == 1
+              labels:
+                service: k8s
+                severity: critical
+              annotations:
+                description: '{{ $labels.node }} has run out of disk space.'
+                summary: Node ran out of disk space.
+            - alert: K8SNodeMemoryPressure
+              expr: kube_node_status_condition{condition="MemoryPressure",status="true"} ==
+                1
+              labels:
+                service: k8s
+                severity: warning
+              annotations:
+                description: '{{ $labels.node }} is under memory pressure.'
+                summary: Node is under memory pressure.
+            - alert: K8SNodeDiskPressure
+              expr: kube_node_status_condition{condition="DiskPressure",status="true"} == 1
+              labels:
+                service: k8s
+                severity: warning
+              annotations:
+                description: '{{ $labels.node }} is under disk pressure.'
+                summary: Node is under disk pressure.
+            - alert: NodeCPUUsage
+              expr: (100 - (avg by (instance) (irate(node_cpu{job="kubernetes-nodes",mode="idle"}[5m])) * 100)) > 90
+              for: 30m
+              labels:
+                severity: warning
+              annotations:
+                summary: "{{$labels.instance}}: High CPU usage detected"
+                description: "{{$labels.instance}}: CPU usage is above 90% (current value is: {{ $value }})"
+            - alert: NodeMemoryUsage
+              expr: (((node_memory_MemTotal-node_memory_MemFree-node_memory_Cached)/(node_memory_MemTotal)*100)) > 90
+              for: 30m
+              labels:
+                severity: warning
+              annotations:
+                summary: "{{$labels.instance}}: High memory usage detected"
+                description: "{{$labels.instance}}: Memory usage is above 90% (current value is: {{ $value }})"
+# END < from https://github.com/camilb/prometheus-kubernetes/blob/master/manifests/prometheus/prometheus-k8s-rules.yaml
+# START > Zookeeper alerts
+        - name: zookeeper.rules
+          rules:
+            - alert: ZookeeperRequestAvgLatencyTooHighWarning
+              annotations:
+                message: "{{ $labels.namespace }}/{{ $labels.pod }} zk_avg_latency was greater than 50."
+                summary: Zookeeper taking too long to respond to client requests (warning).
+              expr: zk_avg_latency > 50
+              labels:
+                severity: warning
+            - alert: ZookeeperRequestAvgLatencyTooHighCritical
+              annotations:
+                message: "{{ $labels.namespace }}/{{ $labels.pod }} zk_avg_latency was greater than 100."
+                summary: Zookeeper taking too long to respond to client requests (critical).
+              expr: zk_avg_latency > 100
+              labels:
+                severity: critical
+            - alert: ZookeeperTooManyOutstandingRequests
+              annotations:
+                message: "{{ $labels.namespace }}/{{ $labels.pod }} zk_outstanding_requests was greater than 10 for greater than 5m."
+                summary: Zookeeper enqueued too many requests. Zookeeper was unable to keep up with requests it received.
+              expr: avg_over_time(zk_outstanding_requests[5m]) > 10
+              labels:
+                severity: critical
+            - alert: ZookeeperTooManyPendingSyncs
+              annotations:
+                message: "{{ $labels.namespace }}/{{ $labels.pod }} zk_pending_syncs was greater than 10 for greater than 5m."
+                summary: Zookeeper had too many pending syncs.
+              expr: avg_over_time(zk_pending_syncs[5m]) > 10
+              labels:
+                severity: critical
+            - alert: ZookeeperWrongNumberOfFollowersPerStatefulSet
+              annotations:
+                message: "{{ $labels.namespace }}/{{ $labels.pod }} followers was not equal to (number of ensemble servers -1) for 20m."
+                summary: Zookeeper followers was less than expected per the StatefulSet's desired replica count.
+              for: 20m
+              expr: avg(zk_followers) != ( avg(kube_statefulset_replicas{statefulset="zookeeper"}) - 1 )
+              labels:
+                severity: critical
+# END < Zookeeper alerts
+        - name: custom.rules
+          rules:
+            - alert: KubePodOOMKilled
+              annotations:
+                description: "{{ $labels.namespace }}/{{ $labels.pod }} was terminated with reason=OOMKilled."
+                summary: Pod was terminated with reason=OOMKilled.
+              expr: |
+                kube_pod_container_status_terminated_reason{reason="OOMKilled"} != 0
+              labels:
+                severity: warning
+            - alert: KubeServiceTargetsZeroPods
+              annotations:
+                description: "{{ $labels.namespace }}/{{ $labels.service }} targets zero pods."
+                summary: Service targets zero pods.
+              expr: |
+                kube_endpoint_address_available{namespace!="kube-system",endpoint!="cluster-autoscaler"} + kube_endpoint_address_not_ready{namespace!="kube-system",endpoint!="cluster-autoscaler"} == 0
+              for: 10m
+              labels:
+                severity: critical
+    rules:
+      groups:
+# START > generated from https://github.com/kubernetes-monitoring/kubernetes-mixin
+        - name: k8s.rules
+          rules:
+            - expr: sum(rate(container_cpu_usage_seconds_total{image!=""}[5m])) by (namespace)
+              record: "namespace:container_cpu_usage_seconds_total:sum_rate"
+            - expr: sum(container_memory_usage_bytes{image!=""}) by (namespace)
+              record: "namespace:container_memory_usage_bytes:sum"
+            - expr: |
+                sum by (namespace, label_name) (sum(rate(container_cpu_usage_seconds_total{image!=""}[5m])) by (namespace, pod_name)
+                 * on (namespace, pod_name) group_left(label_name) label_replace(kube_pod_labels, "pod_name", "$1", "pod", "(.*)"))
+              record: "namespace_name:container_cpu_usage_seconds_total:sum_rate"
+            - expr: |
+                sum by (namespace, label_name) (sum(container_memory_usage_bytes{image!=""}) by (pod_name, namespace)
+                * on (namespace, pod_name) group_left(label_name) label_replace(kube_pod_labels, "pod_name", "$1", "pod", "(.*)"))
+              record: "namespace_name:container_memory_usage_bytes:sum"
+            - expr: |
+                sum by (namespace, label_name) (
+                  sum(kube_pod_container_resource_requests_memory_bytes) by (namespace, pod)
+                * on (namespace, pod) group_left(label_name) label_replace(kube_pod_labels, "pod_name", "$1", "pod", "(.*)"))
+              record: "namespace_name:kube_pod_container_resource_requests_memory_bytes:sum"
+            - expr: |
+                sum by (namespace, label_name) (
+                  sum(kube_pod_container_resource_requests_cpu_cores and on(pod) kube_pod_status_scheduled{condition="true"}) by (namespace, pod)
+                * on (namespace, pod) group_left(label_name) label_replace(kube_pod_labels, "pod_name", "$1", "pod", "(.*)"))
+              record: "namespace_name:kube_pod_container_resource_requests_cpu_cores:sum"
+        - name: "node.rules"
+          rules:
+            - expr: sum(min(kube_pod_info) by (node))
+              record: ":kube_pod_info_node_count:"
+            - expr: max(label_replace(kube_pod_info, "pod", "$1", "pod", "(.*)")) by (node, namespace, pod)
+              record: "node_namespace_pod:kube_pod_info:"
+            - expr: count by (node) (sum by (node, cpu) (node_cpu * on (namespace, pod) group_left(node) node_namespace_pod:kube_pod_info:))
+              record: "node:node_num_cpu:sum"
+            - expr: 1 - avg(rate(node_cpu{mode="idle"}[1m]))
+              record: ":node_cpu_utilisation:avg1m"
+            - expr: 1 - avg by (node) (rate(node_cpu{mode="idle"}[1m]) * on (namespace, pod) group_left(node) node_namespace_pod:kube_pod_info:)
+              record: "node:node_cpu_utilisation:avg1m"
+            - expr: sum(node_load1) / sum(node:node_num_cpu:sum)
+              record: ":node_cpu_saturation_load1:"
+            - expr: sum by (node) (node_load1 * on (namespace, pod) group_left(node) node_namespace_pod:kube_pod_info:) / node:node_num_cpu:sum
+              record: "node:node_cpu_saturation_load1:"
+            - expr: 1 - sum(node_memory_MemFree + node_memory_Cached + node_memory_Buffers) / sum(node_memory_MemTotal)
+              record: ":node_memory_utilisation:"
+            - expr: sum by (node) ((node_memory_MemFree + node_memory_Cached + node_memory_Buffers) * on (namespace, pod) group_left(node) node_namespace_pod:kube_pod_info:)
+              record: "node:node_memory_bytes_available:sum"
+            - expr: sum by (node) (node_memory_MemTotal * on (namespace, pod) group_left(node) node_namespace_pod:kube_pod_info:)
+              record: "node:node_memory_bytes_total:sum"
+            - expr: (node:node_memory_bytes_total:sum - node:node_memory_bytes_available:sum) / scalar(sum(node:node_memory_bytes_total:sum))
+              record: "node:node_memory_utilisation:ratio"
+            - expr: 1e3 * sum((rate(node_vmstat_pgpgin[1m]) + rate(node_vmstat_pgpgout[1m])))
+              record: ":node_memory_swap_io_bytes:sum_rate"
+            - expr: |
+                1 - sum by (node) ((node_memory_MemFree + node_memory_Cached + node_memory_Buffers) * on (namespace, pod) group_left(node) node_namespace_pod:kube_pod_info:)
+                  / sum by (node) (node_memory_MemTotal * on (namespace, pod) group_left(node) node_namespace_pod:kube_pod_info:)
+              record: "node:node_memory_utilisation:"
+            - expr: 1 - (node:node_memory_bytes_available:sum / node:node_memory_bytes_total:sum)
+              record: "node:node_memory_utilisation_2:"
+            - expr: 1e3 * sum by (node) ((rate(node_vmstat_pgpgin[1m]) + rate(node_vmstat_pgpgout[1m])) * on (namespace, pod) group_left(node) node_namespace_pod:kube_pod_info:)
+              record: "node:node_memory_swap_io_bytes:sum_rate"
+            - expr: avg(irate(node_disk_io_time_ms{device=~"(sd|xvd).+"}[1m]) / 1e3)
+              record: ":node_disk_utilisation:avg_irate"
+            - expr: avg by (node) (irate(node_disk_io_time_ms{device=~"(sd|xvd).+"}[1m]) / 1e3 * on (namespace, pod) group_left(node) node_namespace_pod:kube_pod_info:)
+              record: "node:node_disk_utilisation:avg_irate"
+            - expr: avg(irate(node_disk_io_time_weighted{device=~"(sd|xvd).+"}[1m]) / 1e3)
+              record: ":node_disk_saturation:avg_irate"
+            - expr: |
+                avg by (node) (irate(node_disk_io_time_weighted{device=~"(sd|xvd).+"}[1m]) / 1e3
+                 * on (namespace, pod) group_left(node) node_namespace_pod:kube_pod_info:)
+              record: "node:node_disk_saturation:avg_irate"
+            - expr: sum(irate(node_network_receive_bytes{device="eth0"}[1m])) + sum(irate(node_network_transmit_bytes{device="eth0"}[1m]))
+              record: ":node_net_utilisation:sum_irate"
+            - expr: |
+                sum by (node) ((irate(node_network_receive_bytes{device="eth0"}[1m]) + irate(node_network_transmit_bytes{device="eth0"}[1m]))
+                 * on (namespace, pod) group_left(node) node_namespace_pod:kube_pod_info:)
+              record: "node:node_net_utilisation:sum_irate"
+            - expr: sum(irate(node_network_receive_drop{device="eth0"}[1m])) + sum(irate(node_network_transmit_drop{device="eth0"}[1m]))
+              record: ":node_net_saturation:sum_irate"
+            - expr: |
+                sum by (node) ((irate(node_network_receive_drop{device="eth0"}[1m]) + irate(node_network_transmit_drop{device="eth0"}[1m])) * on (namespace, pod) group_left(node)
+                  node_namespace_pod:kube_pod_info:)
+              record: "node:node_net_saturation:sum_irate"
+# END < generated from https://github.com/kubernetes-monitoring/kubernetes-mixin
+    prometheus.yml:
+
+      rule_files:
+        - /etc/config/rules
+        - /etc/config/alerts
+      # for details on scrape configs see https://github.com/prometheus/prometheus/blob/master/documentation/examples/prometheus-kubernetes.yml
+      scrape_configs:
+        - job_name: 'kubernetes-apiservers'
+          kubernetes_sd_configs:
+            - role: endpoints
+          scheme: https
+          tls_config:
+            ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+            insecure_skip_verify: true
+          bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+          relabel_configs:
+            - source_labels: [__meta_kubernetes_namespace, __meta_kubernetes_service_name, __meta_kubernetes_endpoint_port_name]
+              action: keep
+              regex: default;kubernetes;https
+            - source_labels: [__meta_kubernetes_endpoints_name]
+              action: replace
+              target_label: kubernetes_name
+
+        - job_name: 'kubernetes-nodes'
+          scheme: https
+          tls_config:
+            ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+          bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+          kubernetes_sd_configs:
+            - role: node
+          relabel_configs:
+            - action: labelmap
+              regex: __meta_kubernetes_node_label_(.+)
+            - target_label: __address__
+              replacement: kubernetes.default.svc:443
+            - source_labels: [__meta_kubernetes_node_name]
+              regex: (.+)
+              target_label: __metrics_path__
+              replacement: /api/v1/nodes/${1}/proxy/metrics
+            - source_labels: [__meta_kubernetes_node_name]
+              action: replace
+              target_label: kubernetes_name
+
+        - job_name: 'kubernetes-cadvisor'
+          scheme: https
+          tls_config:
+            ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+          bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+          kubernetes_sd_configs:
+            - role: node
+          relabel_configs:
+            - action: labelmap
+              regex: __meta_kubernetes_node_label_(.+)
+            - target_label: __address__
+              replacement: kubernetes.default.svc:443
+            - source_labels: [__meta_kubernetes_node_name]
+              regex: (.+)
+              target_label: __metrics_path__
+              replacement: /api/v1/nodes/${1}/proxy/metrics/cadvisor
+            - source_labels: [__meta_kubernetes_node_name]
+              action: replace
+              target_label: kubernetes_name
+
+        - job_name: 'kubernetes-service-endpoints'
+          kubernetes_sd_configs:
+            - role: endpoints
+          relabel_configs:
+            - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scrape]
+              action: keep
+              regex: true
+            - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_path]
+              action: replace
+              target_label: __metrics_path__
+              regex: (.+)
+            - source_labels: [__address__, __meta_kubernetes_service_annotation_prometheus_io_port]
+              action: replace
+              target_label: __address__
+              regex: ([^:]+)(?::\d+)?;(\d+)
+              replacement: $1:$2
+              target_label: __address__
+            - action: labelmap
+              regex: __meta_kubernetes_service_label_(.+)
+            - source_labels: [__meta_kubernetes_namespace]
+              action: replace
+              target_label: kubernetes_namespace
+            - source_labels: [__meta_kubernetes_service_name]
+              action: replace
+              target_label: kubernetes_name
+
+        - job_name: 'kubernetes-services'
+          metrics_path: /probe
+          params:
+            module: [http_2xx]
+          kubernetes_sd_configs:
+            - role: service
+          relabel_configs:
+            - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_probe]
+              action: keep
+              regex: true
+            - source_labels: [__address__]
+              target_label: __param_target
+#           - target_label: __address__
+#             replacement: blackbox-exporter.example.com:9115
+            - source_labels: [__param_target]
+              target_label: instance
+            - action: labelmap
+              regex: __meta_kubernetes_service_label_(.+)
+            - source_labels: [__meta_kubernetes_namespace]
+              target_label: kubernetes_namespace
+            - source_labels: [__meta_kubernetes_service_name]
+              target_label: kubernetes_name
+
+        - job_name: 'kubernetes-ingresses'
+          metrics_path: /probe
+          params:
+            module: [http_2xx]
+          kubernetes_sd_configs:
+            - role: ingress
+          relabel_configs:
+            - source_labels: [__meta_kubernetes_ingress_annotation_prometheus_io_probe]
+              action: keep
+              regex: true
+            - source_labels: [__meta_kubernetes_ingress_scheme,__address__,__meta_kubernetes_ingress_path]
+              regex: (.+);(.+);(.+)
+              replacement: ${1}://${2}${3}
+              target_label: __param_target
+#           - target_label: __address__
+#             replacement: blackbox-exporter.example.com:9115
+            - source_labels: [__param_target]
+              target_label: instance
+            - action: labelmap
+              regex: __meta_kubernetes_ingress_label_(.+)
+            - source_labels: [__meta_kubernetes_namespace]
+              target_label: kubernetes_namespace
+            - source_labels: [__meta_kubernetes_ingress_name]
+              target_label: kubernetes_name
+
+        - job_name: 'kubernetes-pods'
+          kubernetes_sd_configs:
+            - role: pod
+          relabel_configs:
+            - action: labelmap
+              regex: __meta_kubernetes_pod_label_(.+)
+            - source_labels: [__meta_kubernetes_namespace]
+              action: replace
+              target_label: kubernetes_namespace
+            - source_labels: [__meta_kubernetes_pod_name]
+              action: replace
+              target_label: kubernetes_pod_name
+            - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+              action: keep
+              regex: true
+            - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+              action: replace
+              target_label: __metrics_path__
+              regex: (.+)
+            - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+              action: replace
+              regex: (.+):(?:\d+);(\d+)
+              replacement: ${1}:${2}
+              target_label: __address__
+            - source_labels: [__meta_kubernetes_pod_name]
+              action: replace
+              target_label: kubernetes_name
+
+        - job_name: 'prometheus-pushgateway'
+          honor_labels: true
+          kubernetes_sd_configs:
+            - role: service
+          relabel_configs:
+            - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_probe]
+              action: keep
+              regex: pushgateway
+            - source_labels: [__meta_kubernetes_service_name]
+              action: replace
+              target_label: kubernetes_name
+
+        - job_name: 'kubernetes-pods-multi'
+          kubernetes_sd_configs:
+            - role: pod
+          relabel_configs:
+            ## Drop pods annotated with prometheus.io.scrape=false
+            - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+              action: drop
+              regex: 'false'
+            ## Drop any endpoint where pod port name does not end with "xp" (short for exporter)
+            - source_labels: [__meta_kubernetes_pod_container_port_name]
+              action: keep
+              regex: ".*xp"
+            ## Allow pods to override the scrape scheme with prometheus.io.scheme=https
+            - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scheme]
+              action: replace
+              regex: "^(https?)$"
+              replacement: "$1"
+              target_label: __scheme__
+            ## Allow pods to override the scrape path with prometheus.io.path=/other_metrics_path
+            - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+              action: replace
+              regex: "^(.+)$"
+              replacement: "$1"
+              target_label: __metrics_path__
+            ## Create label from pod namespace, for routing alerts
+            - source_labels: [__meta_kubernetes_namespace]
+              action: replace
+              target_label: namespace
+            ## Convert pod labels
+            - action: labelmap
+              regex: __meta_kubernetes_pod_label_(.+)
+            ## Create label from pod name
+            - source_labels: [__meta_kubernetes_pod_name]
+              action: replace
+              target_label: pod
+            - source_labels: [__meta_kubernetes_pod_name]
+              action: replace
+              target_label: kubernetes_name
+
+
+rawOauth2AccessListCore:
+  resources:
+    - apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        labels:
+          app: oauth2-proxy
+        name: oauth2-proxy-accesslist-core
+      data:
+        restricted_user_access: |-
+          dcwangmit01@gmail.com
+          jmdots@gmail.com
+          rluckie@gmail.com
+
+rawClusterRoleBindings:
+  resources:
+    - apiVersion: rbac.authorization.k8s.io/v1
+      kind: ClusterRoleBinding
+      metadata:
+        name: oidc-cluster-admin
+      subjects:
+        - kind: Group
+          name: kubernetes-admins
+          apiGroup: rbac.authorization.k8s.io
+      roleRef:
+        kind: ClusterRole
+        name: cluster-admin
+        apiGroup: rbac.authorization.k8s.io
+
+rawLimitRanges:
+  resources:
+    - apiVersion: v1
+      kind: LimitRange
+      metadata:
+        name: limits
+      spec:
+        limits:
+        - defaultRequest:
+            cpu: 100m
+            memory: 256Mi
+          default:
+            cpu: 100m
+            memory: 256Mi
+          type: Container
+
+rawPriorityClasses:
+  resources:
+    - apiVersion: scheduling.k8s.io/v1beta1
+      kind: PriorityClass
+      metadata:
+        name: common-critical
+      value: 100000000
+      globalDefault: false
+      description: This priority class should only be used for critical priority common pods.
+    - apiVersion: scheduling.k8s.io/v1beta1
+      kind: PriorityClass
+      metadata:
+        name: common-high
+      value: 90000000
+      globalDefault: false
+      description: This priority class should only be used for high priority common pods.
+    - apiVersion: scheduling.k8s.io/v1beta1
+      kind: PriorityClass
+      metadata:
+        name: common-medium
+      value: 80000000
+      globalDefault: false
+      description: This priority class should only be used for medium priority common pods.
+    - apiVersion: scheduling.k8s.io/v1beta1
+      kind: PriorityClass
+      metadata:
+        name: common-low
+      value: 70000000
+      globalDefault: false
+      description: This priority class should only be used for low priority common pods.
+    - apiVersion: scheduling.k8s.io/v1beta1
+      kind: PriorityClass
+      metadata:
+        name: app-critical
+      value: 100000
+      globalDefault: false
+      description: This priority class should only be used for critical priority app pods.
+    - apiVersion: scheduling.k8s.io/v1beta1
+      kind: PriorityClass
+      metadata:
+        name: app-high
+      value: 90000
+      globalDefault: false
+      description: This priority class should only be used for high priority app pods.
+    - apiVersion: scheduling.k8s.io/v1beta1
+      kind: PriorityClass
+      metadata:
+        name: app-medium
+      value: 80000
+      globalDefault: true
+      description: This priority class should only be used for medium priority app pods.
+    - apiVersion: scheduling.k8s.io/v1beta1
+      kind: PriorityClass
+      metadata:
+        name: app-low
+      value: 70000
+      globalDefault: false
+      description: This priority class should only be used for low priority app pods.
+
+
+dex:
+# If you are integrating with Cisco's OIDC provider, then use
+#   'dcwangmit01/dex:cisco-oidc' which is a dex modified to work with Cisco.
+# image: dcwangmit01/dex
+# imageTag: cisco-oidc.20190103
+# imagePullPolicy: IfNotPresent
+  rbac:
+    create: true
+  serviceAccount:
+    create: true
+  replicas: 1
+  resources:
+    limits:
+      cpu: 100m
+      memory: 50Mi
+    requests:
+      cpu: 100m
+      memory: 50Mi
+  ingress:
+    enabled: true
+    annotations:
+      external-dns.alpha.kubernetes.io/target: dyndns.davidwang.com
+      kubernetes.io/ingress.class: nginx
+      nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    path: /
+    hosts:
+      - dex.kube1.davidwang.com
+    tls:
+      - secretName: wildcard-production-tls
+        hosts:
+          - dex.kube1.davidwang.com
+  ports:
+    - name: http
+      containerPort: 8080
+      protocol: TCP
+    - name: grpc
+      containerPort: 5000
+      protocol: TCP
+  config:
+    issuer: https://dex.kube1.davidwang.com/
+    storage:
+      type: kubernetes
+      config:
+        inCluster: true
+    connectors:
+      - type: github
+        id: github
+        name: GitHub
+        config:
+          clientID: '[[ (ds "cluster_secrets").github.clientID ]]'
+          clientSecret: '[[ (ds "cluster_secrets").github.clientSecret ]]'
+          redirectURI: https://dex.kube1.davidwang.com/callback
+          org: '[[ (ds "cluster_secrets").github.organization ]]'
+    oauth2:
+      skipApprovalScreen: true
+      responseTypes: ["code", "token", "id_token"]
+    staticClients:
+      - name: alertmanager
+        id: alertmanager.kube1.davidwang.com
+        secret: '[[ (ds "cluster_secrets").dex.clients.alertmanager.secret ]]'
+        redirectURIs:
+          - https://alertmanager.kube1.davidwang.com/oauth2/callback
+      - name: gangway
+        id: gangway.kube1.davidwang.com
+        secret: '[[ (ds "cluster_secrets").dex.clients.gangway.secret ]]'
+        redirectURIs:
+          - https://gangway.kube1.davidwang.com/callback
+      - name: grafana
+        id: grafana.kube1.davidwang.com
+        secret: '[[ (ds "cluster_secrets").dex.clients.grafana.secret ]]'
+        redirectURIs:
+          - https://grafana.kube1.davidwang.com/oauth2/callback
+      - name: kibana
+        id: kibana.kube1.davidwang.com
+        secret: '[[ (ds "cluster_secrets").dex.clients.kibana.secret ]]'
+        redirectURIs:
+          - https://kibana.kube1.davidwang.com/oauth2/callback
+      - name: prometheus
+        id: prometheus.kube1.davidwang.com
+        secret: '[[ (ds "cluster_secrets").dex.clients.prometheus.secret ]]'
+        redirectURIs:
+          - https://prometheus.kube1.davidwang.com/oauth2/callback
+      - name: oidcdebugger
+        id: oidcdebugger.com
+        secret: '[[ (ds "cluster_secrets").dex.clients.oidcdebugger.secret ]]'
+        redirectURIs:
+          - https://oidcdebugger.com/debug
+    enablePasswordDB: false
+    web:
+      http: 0.0.0.0:8080
+
+gangway:
+  chart: cisco-sso/gangway
+  version: 0.1.0
+  replicaCount: 1
+  ingress:
+    enabled: true
+    annotations:
+      external-dns.alpha.kubernetes.io/target: dyndns.davidwang.com
+      kubernetes.io/ingress.class: nginx
+      nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    path: /
+    hosts:
+      - gangway.kube1.davidwang.com
+    tls:
+      - secretName: wildcard-production-tls
+        hosts:
+          - gangway.kube1.davidwang.com
+  resources:
+    limits:
+     cpu: 100m
+     memory: 128Mi
+    requests:
+     cpu: 100m
+     memory: 128Mi
+  priorityClassName: "common-high"
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 50
+          podAffinityTerm:
+            topologyKey: failure-domain.beta.kubernetes.io/zone
+            labelSelector:
+              matchLabels:
+                release: gangway
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - weight: 40
+          topologyKey: "kubernetes.io/hostname"
+          labelSelector:
+            matchLabels:
+              release: gangway
+  secrets: []
+  configFiles:
+
+    gangway.yaml: |-
+
+      ## The address to listen on. Defaults to 0.0.0.0 to listen on all interfaces.
+      host: 0.0.0.0
+
+      ## The port to listen on. Defaults to 8080.
+      port: 8080
+
+      ## Should Gangway serve TLS vs. plain HTTP? Default: false
+      serveTLS: false
+
+      ## The public cert file (including root and intermediates) to use when serving TLS.
+      certFile: "/etc/gangway/tls/tls.crt"
+
+      ## The private key file when serving TLS.
+      keyFile: "/etc/gangway/tls/tls.key"
+
+      ## The cluster name. Used in UI and kubectl config instructions.
+      clusterName: "kube1.davidwang.com"
+
+      ## OAuth2 URL to start authorization flow.
+      authorizeURL: "https://dex.kube1.davidwang.com/auth"
+
+      ## OAuth2 URL to obtain access tokens.
+      tokenURL: "https://dex.kube1.davidwang.com/token"
+
+      ## Endpoint that provides user profile information [optional]. Not all providers will require this.
+      #audience: "https://dex.kube1.davidwang.com/userinfo"
+
+      ## Where to redirect back to. This should be a URL where gangway is reachable. Typically this also needs to be
+      ## registered as part of the oauth application with the oAuth provider.
+      redirectURL: "https://gangway.kube1.davidwang.com/callback"
+
+      ## API client ID as indicated by the identity provider.
+      clientID: "gangway.kube1.davidwang.com"
+      clientSecret: '[[ (ds "cluster_secrets").dex.clients.gangway.secret ]]'
+      sessionSecurityKey: '[[ (ds "cluster_secrets").dex.clients.gangway.session ]]'
+
+      ## The JWT claim to use as the username. This is used in UI.
+      usernameClaim: "email"
+
+      ## The JWT claim to use as the email claim. This is used to name the "user" part of the config.
+      emailClaim: "email"
+
+      ## The API server endpoint used to configure kubectl.
+      apiServerURL: "https://api.kube1.davidwang.com:6443"
+
+      ## The path to find the CA bundle for the API server. Used to configure kubectl. This is typically mounted into the
+      ## default location for workloads running on a Kubernetes cluster and doesn't need to be set.
+      clusterCAPath: "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+
+      ## Used to specify the scope of the requested OAuth authorization.
+      scopes: ["openid", "profile", "email", "offline_access", "groups"]
+
