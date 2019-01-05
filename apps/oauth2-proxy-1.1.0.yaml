@@ -1,0 +1,130 @@
+{{- /*
+
+  Copyright © 2018 Cisco Systems, Inc.
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+
+*/ -}}
+
+chart: {{ default "stable/oauth2-proxy" $app.chart }}
+version: {{ default "0.6.0" $app.version }}
+
+{{- $root := . }}
+{{- $appIngress := or .ingress.oauthProxy.ingress nil }}
+{{- $ingress := merge $appIngress .ingress }}
+
+{{- $appAuthenticatedEmailsFile := or $app nil }}
+{{- $AuthenticatedEmailsFile := merge $appAuthenticatedEmailsFile .ingress.oauthProxy }}
+
+{{- $dnsShortname := $app.dnsShortname }}
+{{- $dnsDomain := .ingress.domain }}
+{{- $dnsFQDN := printf "%s.%s" $app.dnsShortname .ingress.domain }}
+
+#TODO (rluckie) detangle and simplify
+
+replicaCount: {{ default 2 $app.replicaCount }}
+
+config:
+  clientID: "{{ $app.clientID }}"
+  clientSecret: "{{ $app.clientSecret }}"
+  cookieSecret: "{{ $app.cookieSecret }}"
+  configFile: {{ $app.configFile | quote }}
+
+{{- if $AuthenticatedEmailsFile.authenticatedEmailsFile }}
+authenticatedEmailsFile:
+  enabled: {{ $AuthenticatedEmailsFile.authenticatedEmailsFile.enabled }}
+{{- if $AuthenticatedEmailsFile.authenticatedEmailsFile.restricted_access }}
+  restricted_access: {{ $AuthenticatedEmailsFile.authenticatedEmailsFile.restricted_access | quote }}
+{{- else }}
+  template: {{ $AuthenticatedEmailsFile.authenticatedEmailsFile.template }}
+{{- end}}
+{{- end }}
+
+extraArgs:
+  upstream: {{ $app.upstream }}
+  redirect-url: "https://{{ $dnsFQDN }}"
+  cookie-domain: "{{ $dnsFQDN }}"
+{{- with .ingress.oauthProxy.extraArgs }}
+{{- if $app.extraArgs }}
+{{- $extraArgs := merge $app.extraArgs . }}
+{{ toYaml $extraArgs | indent 2 }}
+{{ else }}
+{{ toYaml . | indent 2 }}
+{{- end }}
+{{- end }}
+
+priorityClassName: {{ default "" $app.priorityClassName }}
+
+{{ with $ingress }}
+ingress:
+  enabled: {{ .enabled }}
+  annotations:
+    kubernetes.io/ingress.class: {{ .class }}
+    {{- if eq .basicAuth.enabled "true" }}
+    nginx.ingress.kubernetes.io/auth-type: basic
+    nginx.ingress.kubernetes.io/auth-realm: "Authentication Required"
+    nginx.ingress.kubernetes.io/auth-secret: {{ .basicAuth.secretName }}
+    {{- end }}
+    {{- if .externalDns.enabled }}
+    external-dns.alpha.kubernetes.io/hostname: "{{ $dnsFQDN }}"
+    {{- end }}
+    {{- if .tls.enabled }}
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    {{- end }}
+    {{- if .lego.enabled }}
+    {{- if .lego.defaultAnnotationSuffix }}
+    kubernetes.io/tls-acme{{ .lego.defaultAnnotationSuffix }}: "true"
+    {{ else }}
+    kubernetes.io/tls-acme: "true"
+    {{- end }}
+    {{- end }}
+    {{- with $app.ingress.annotations }}
+{{ toYaml . | indent 4 }}
+    {{- end }}
+
+  hosts:
+    - {{ $dnsFQDN }}
+  {{- if .tls.enabled }}
+  tls:
+  {{- if .lego.enabled }}
+    - secretName: {{ $dnsShortname }}-tls
+  {{ else }}
+    - secretName: {{ .tls.secretName }}
+  {{- end }}
+      hosts:
+        - {{ $dnsFQDN }}
+  {{- end }}
+{{- end }}
+
+{{- with $root.ingress.oauthProxy.image }}
+image:
+{{ toYaml . | indent 2 }}
+{{- end }}
+
+{{- with $app.service }}
+service:
+{{ toYaml . | indent 2 }}
+{{- end }}
+
+{{- if $app.resources }}
+resources:
+{{ toYaml $app.resources | indent 2 }}
+{{ else }}
+resources:
+  limits:
+    cpu: 100m
+    memory: 64Mi
+  requests:
+    cpu: 100m
+    memory: 64Mi
+{{- end }}
